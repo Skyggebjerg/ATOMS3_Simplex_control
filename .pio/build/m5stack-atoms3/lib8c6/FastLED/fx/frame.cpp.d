@@ -1,0 +1,20 @@
+.pio/build/m5stack-atoms3/lib8c6/FastLED/fx/frame.cpp.o: \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fx/frame.cpp \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fx/frame.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/namespace.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/crgb.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/chsv.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/color.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/lib8tion/types.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/force_inline.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/template_magic.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/ptr.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/scoped_ptr.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/allocator.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/dbg.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/strstream.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/str.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/vector.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/inplacenew.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/insert_result.h \
+ .pio/libdeps/m5stack-atoms3/FastLED/src/fl/math_macros.h

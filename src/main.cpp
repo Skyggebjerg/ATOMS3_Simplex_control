@@ -13,6 +13,8 @@ const int startStopPin = 5;    // GPIO 5: Start/Stop & Torque limitation (SCM010
 const int directionPin = 7;    // GPIO 7: Rotation direction (SCM010 Pin 3 Purple)
 const int speedModePin = 8;    // GPIO 8: Speed High / Low (SCM010 Pin 7 Green)
 
+int relative_change = 0; // Relative change in encoder value
+
 int pwmValue = 0; // Default PWM value
 int targetRPM = 3000; // Default target RPM
 int direction = 1; // Default direction (true for CW)
@@ -69,8 +71,8 @@ void handleUpdate() {
         int pwmValue = map(targetRPM, 0, maxRPM, 0, pow(2, pwmResolution) -1);
         direction = server.arg("direction").toInt();
 
-        EEPROM.put(0, targetRPM);
-        EEPROM.put(sizeof(targetRPM), direction);
+        EEPROM.put(0, pwmValue);
+        EEPROM.put(sizeof(pwmValue), direction);
         EEPROM.commit();
 
         server.send(200, "text/html", "<html><body><h1>Settings Saved</h1><a href=\"/\">Go Back</a></body></html>");
@@ -92,8 +94,8 @@ void setup() {
 
     Serial.begin(115200);
     EEPROM.begin(512);
-    EEPROM.get(0, targetRPM);
-    EEPROM.get(sizeof(targetRPM), direction);
+    EEPROM.get(0, pwmValue);
+    EEPROM.get(sizeof(pwmValue), direction);
     WiFi.softAP(ssid, password);
     Serial.println("Access Point Started");
     Serial.print("IP Address: ");
@@ -146,7 +148,7 @@ switch (mstatus) {
             //if (millis() - tempus >= direction) // to be set by adjustment (100)
             //{
                 //AtomS3.Display.drawString("Running", 5, 0);
-                AtomS3.Display.drawString(String(targetRPM), 10, 30);
+                AtomS3.Display.drawString(String(pwmValue), 10, 30);
                 AtomS3.Display.drawString(String(direction), 10, 60);
                 
                 ledcWrite(pwmChannel, pwmValue); // Set the PWM value
@@ -171,6 +173,7 @@ switch (mstatus) {
             if (newpress) {
                 //digitalWrite(startStopPin, LOW); // Stop the motor
                 AtomS3.Display.drawString("Speed", 5, 0);
+                AtomS3.Display.drawString(String(pwmValue), 10, 30);
                 //AtomS3.Display.drawString(String(targetRPM), 10, 30);
                 last_value = encoder_value; // Update the last value
                 //pwmValue = map(targetRPM, 0, maxRPM, 0, pow(2, pwmResolution) -1);
@@ -178,7 +181,19 @@ switch (mstatus) {
             }
 
             if (last_value != encoder_value) {
-                int relative_change = (encoder_value - last_value); // Calculate the relative change
+                if (encoder_value - last_value > 1) {
+                    relative_change = 1;
+                    last_value = encoder_value;
+                }
+                else if (encoder_value - last_value < -1) {
+                    relative_change = -1;
+                    last_value = encoder_value;
+                }
+                else {
+                    relative_change = 0;
+                }
+
+                //relative_change = (encoder_value - last_value)*2; // Calculate the relative change
                 
                 
 
@@ -203,7 +218,7 @@ switch (mstatus) {
                 //pwmValue = a3+((a0-a3)/(1+((targetRPM/a2)^a1))^a4);
                 //AtomS3.Display.drawString(String(pwmValue), 10, 100);
 
-                last_value = encoder_value; // Update the last value
+                //last_value = encoder_value; // Update the last value
             }
             delay(20);
             break;
@@ -245,7 +260,7 @@ switch (mstatus) {
         {
             if (newpress) {
                 AtomS3.Display.drawString("Save ?", 5, 0);
-                AtomS3.Display.drawString(String(targetRPM), 10, 30);
+                //AtomS3.Display.drawString(String(targetRPM), 10, 30);
                 AtomS3.Display.drawString(String(direction), 10, 60);
                 AtomS3.Display.drawString(String(pwmValue), 10, 100);
                 newpress = false;
@@ -253,8 +268,8 @@ switch (mstatus) {
             
             AtomS3.update();
             if (AtomS3.BtnA.wasPressed()) { // Save to EEPROM
-                EEPROM.put(0, targetRPM);
-                EEPROM.put(sizeof(targetRPM), direction);
+                EEPROM.put(0, pwmValue);
+                EEPROM.put(sizeof(pwmValue), direction);
                 EEPROM.commit();
 
                 // Flash the display in black and green
@@ -268,7 +283,7 @@ switch (mstatus) {
                 // Display "Saved" with a black background
                 AtomS3.Display.fillScreen(TFT_BLACK);
                 AtomS3.Display.setTextColor(TFT_WHITE, TFT_BLACK); // White text on black background
-                AtomS3.Display.drawString(String(targetRPM), 10, 30);
+                AtomS3.Display.drawString(String(pwmValue), 10, 30);
                 AtomS3.Display.drawString(String(direction), 10, 60);
                 AtomS3.Display.drawString("Saved", 30, 100);
                 
