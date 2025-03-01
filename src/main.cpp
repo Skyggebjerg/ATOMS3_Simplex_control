@@ -2,11 +2,17 @@
 #include "M5AtomS3.h"
 #include <M5GFX.h>
 #include "Unit_Encoder.h"
-//#include "M5UnitHbridge.h"
 
 #include <WiFi.h>
 #include <WebServer.h>
 #include <EEPROM.h>
+
+const int encoderAPin = 38;     // GPIO 38: Encoder A (SCM010 Pin 5 Brown)
+const int encoderBPin = 39;     // GPIO 39: Encoder B (SCM010 Pin 6 Yellow)
+
+volatile long encoderCount = 0;
+unsigned long lastTime = 0;
+int rpm = 0;
 
 const int speedPin = 6;        // GPIO 6: Speed regulation  (SCM010 Pin 1 White)
 const int startStopPin = 5;    // GPIO 5: Start/Stop & Torque limitation (SCM010 Pin 2 Grey)
@@ -16,7 +22,7 @@ const int speedModePin = 8;    // GPIO 8: Speed High / Low (SCM010 Pin 7 Green)
 int relative_change = 0; // Relative change in encoder value
 
 int pwmValue = 0; // Default PWM value
-int targetRPM = 3000; // Default target RPM
+//int pwmValue = 3000; // Default target RPM
 int direction = 1; // Default direction (true for CW)
 bool motorRunning = false;
 
@@ -53,10 +59,10 @@ Unit_Encoder sensor;
 
 void handleRoot() {
     String html = "<html><body style=\"font-size: 18px;\">";
-        html += "<meta name=\"viewport\" content=\"width=390, initial-scale=1\"/>";
+    html += "<meta name=\"viewport\" content=\"width=390, initial-scale=1\"/>";
     html += "<h1 style=\"font-size: 24px;\">Motor Control Settings</h1>";
     html += "<form action=\"/update\" method=\"POST\">";
-    html += "TargetRPM: <input type=\"text\" name=\"targetRPM\" value=\"" + String(targetRPM) + "\" style=\"font-size: 18px;\"><br>";
+    html += "pwmValue: <input type=\"text\" name=\"pwmValue\" value=\"" + String(pwmValue) + "\" style=\"font-size: 18px;\"><br>";
     html += "Direction: <input type=\"text\" name=\"direction\" value=\"" + String(direction) + "\" style=\"font-size: 18px;\"><br>";
     html += "<input type=\"submit\" value=\"Save\" style=\"font-size: 18px;\">";
     html += "</form>";
@@ -65,15 +71,20 @@ void handleRoot() {
 }
 
 void handleUpdate() {
-    if (server.hasArg("targetRPM") && server.hasArg("direction")) {
+    if (server.hasArg("pwmValue") && server.hasArg("direction")) {
         //ontime = server.arg("ontime").toInt();
-        targetRPM = server.arg("targetRPM").toInt();
-        int pwmValue = map(targetRPM, 0, maxRPM, 0, pow(2, pwmResolution) -1);
+        pwmValue = server.arg("pwmValue").toInt();
+        AtomS3.Display.clear();
+        AtomS3.Display.drawString(String(pwmValue), 10, 30);
+        ledcWrite(pwmChannel, pwmValue); // Set the motor speed
+        //int pwmValue = map(pwmValue, 0, maxRPM, 0, pow(2, pwmResolution) -1);
         direction = server.arg("direction").toInt();
+        AtomS3.Display.drawString(String(direction), 10, 60);
+        digitalWrite(directionPin, direction ? HIGH : LOW); // Set the direction
 
-        EEPROM.put(0, pwmValue);
-        EEPROM.put(sizeof(pwmValue), direction);
-        EEPROM.commit();
+        //EEPROM.put(0, pwmValue);
+        //EEPROM.put(sizeof(pwmValue), direction);
+        //EEPROM.commit();
 
         server.send(200, "text/html", "<html><body><h1>Settings Saved</h1><a href=\"/\">Go Back</a></body></html>");
     } else {
@@ -81,7 +92,19 @@ void handleUpdate() {
     }
 }
 
+void updateEncoder() {
+    if (digitalRead(encoderBPin) == HIGH) {
+      encoderCount++;
+    } else {
+      encoderCount--;
+    }
+  }
+
 void setup() {
+
+    pinMode(encoderAPin, INPUT_PULLUP);
+    pinMode(encoderBPin, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(encoderAPin), updateEncoder, RISING);
 
     pinMode(speedPin, OUTPUT);
     pinMode(startStopPin, OUTPUT);
@@ -110,13 +133,12 @@ void setup() {
     auto cfg = M5.config();
     AtomS3.begin(cfg);
     sensor.begin();
-    //driver.begin(&Wire, HBRIDGE_I2C_ADDR, 2, 1, 100000L);
 
     AtomS3.Display.setTextColor(WHITE);
     AtomS3.Display.setTextSize(3);
     AtomS3.Display.clear();
     tempus = millis();
-    int pwmValue = map(targetRPM, 0, maxRPM, 0, pow(2, pwmResolution) -1);
+    int pwmValue = map(pwmValue, 0, maxRPM, 0, pow(2, pwmResolution) -1);
 }
 
 void loop() {
@@ -126,57 +148,59 @@ void loop() {
     if (last_btn != btn_status) {
         if (!btn_status) {
             mstatus = mstatus + 1;
-            if (mstatus == 5) mstatus = 0;
+            if (mstatus == 4) mstatus = 0;
             AtomS3.Display.clear();
-            AtomS3.Display.drawString(String(pwmValue), 10, 100);
-            //AtomS3.Display.drawString(String(mstatus), 10, 100);
             newpress = true;
         }
         last_btn = btn_status;
     }
 
+    // Calculate RPM every second
+    if (millis() - lastTime >= 1000) {
+        AtomS3.Display.setTextColor(BLACK);
+        AtomS3.Display.drawString(String(rpm), 10, 90); // Clear the previous value
+        rpm = (encoderCount * 60) / 1024; // Assuming encoder PPR
+        encoderCount = 0;
+        lastTime = millis();
+        AtomS3.Display.setTextColor(WHITE);
+        AtomS3.Display.drawString(String(rpm), 10, 90);
+        }
+
 switch (mstatus) {
 
-        case 0: //run motor
+        case 0: //-------------- RUNNING MODE -----------------//
         { 
             if (newpress) {
-                digitalWrite(directionPin, direction ? HIGH : LOW);
-                digitalWrite(startStopPin, HIGH); // Start the motor
+                digitalWrite(directionPin, direction ? HIGH : LOW); // Set the direction
+                ledcWrite(pwmChannel, pwmValue); // Set the motor speed
                 AtomS3.Display.drawString("Running", 5, 0);
-                newpress = false;
-            }
-            //if (millis() - tempus >= direction) // to be set by adjustment (100)
-            //{
-                //AtomS3.Display.drawString("Running", 5, 0);
                 AtomS3.Display.drawString(String(pwmValue), 10, 30);
                 AtomS3.Display.drawString(String(direction), 10, 60);
-                
-                ledcWrite(pwmChannel, pwmValue); // Set the PWM value
-                
-                
-                //driver.setDriverDirection(HBRIDGE_FORWARD); // Set peristaltic pump in forward to take out BR content
-                //driver.setDriverDirection(HBRIDGE_BACKWARD)
-                //driver.setDriverSpeed8Bits(127); //Run pump in half speed
-                //delay(ontime); // to be set by adjustment (30)
-                //driver.setDriverDirection(HBRIDGE_STOP);
-                //driver.setDriverSpeed8Bits(0);  //Stop pump
-                //tempus = millis();
-            //}
+                newpress = false;
+            }
+
+                AtomS3.update();
+                if (AtomS3.BtnA.wasPressed()) { // Toggle the motor state
+                    motorRunning = !motorRunning;
+                    digitalWrite(startStopPin, motorRunning ? HIGH : LOW);
+                    AtomS3.Display.setTextColor(BLACK);
+                    AtomS3.Display.drawString(motorRunning ? "Stopped" : "Running", 5, 0);
+                    AtomS3.Display.setTextColor(WHITE);
+                    AtomS3.Display.drawString(motorRunning ? "Running" : "Stopped", 5, 0);
+                }
+
             break;
         } // end of case 0
+
 
         case 1: // read encoder for ON time in ms
         {
             signed short int encoder_value = sensor.getEncoderValue();
-            //ontime = encoder_value;
 
             if (newpress) {
-                //digitalWrite(startStopPin, LOW); // Stop the motor
                 AtomS3.Display.drawString("Speed", 5, 0);
                 AtomS3.Display.drawString(String(pwmValue), 10, 30);
-                //AtomS3.Display.drawString(String(targetRPM), 10, 30);
                 last_value = encoder_value; // Update the last value
-                //pwmValue = map(targetRPM, 0, maxRPM, 0, pow(2, pwmResolution) -1);
                 newpress = false;
             }
 
@@ -193,32 +217,12 @@ switch (mstatus) {
                     relative_change = 0;
                 }
 
-                //relative_change = (encoder_value - last_value)*2; // Calculate the relative change
-                
-                
-
                 AtomS3.Display.setTextColor(BLACK);
-                //AtomS3.Display.drawString(String(targetRPM), 10, 30); // Clear the previous value
                 AtomS3.Display.drawString(String(pwmValue), 10, 30); // Clear the previous value
                 AtomS3.Display.setTextColor(WHITE);
-                targetRPM = targetRPM + relative_change; // Update the value
-
                 pwmValue = pwmValue + relative_change;
                 ledcWrite(pwmChannel, pwmValue); // Set the PWM value
                 AtomS3.Display.drawString(String(pwmValue), 10, 30); // Display the updated change
-                //AtomS3.Display.drawString(String(targetRPM), 10, 30); // Display the updated change
-                //pwmValue = map(targetRPM, 0, maxRPM, 0, pow(2, pwmResolution) -1);
-                //float a0 = 9.50771;
-                //float a1 = 2.79886;
-                //float a2 = 5584.01;
-                //float a3 = 257.21;
-                //float a4 = 7.59115;
-                //pwmValue = a3+((a0-a3) / (pow((1+pow((targetRPM/a2), a1)), a4)));
-                //a3+((a0-a3)/(1+((x/a2)^a1))^a4)
-                //pwmValue = a3+((a0-a3)/(1+((targetRPM/a2)^a1))^a4);
-                //AtomS3.Display.drawString(String(pwmValue), 10, 100);
-
-                //last_value = encoder_value; // Update the last value
             }
             delay(20);
             break;
@@ -227,7 +231,6 @@ switch (mstatus) {
         case 2: // read encoder for direction in ms
         {
             signed short int encoder_value = sensor.getEncoderValue();
-            //direction = encoder_value * 100;
 
             if (newpress) {
                 AtomS3.Display.drawString("DIR", 5, 0);
@@ -237,11 +240,9 @@ switch (mstatus) {
             }
 
             if (last_value != encoder_value) {
-                //int relative_change = encoder_value - last_value; // Calculate the relative change
                 AtomS3.Display.setTextColor(BLACK);
                 AtomS3.Display.drawString(String(direction), 10, 60);
                 AtomS3.Display.setTextColor(WHITE);
-                //direction != direction; // Update the value
                 
                 if (last_value < encoder_value) {
                     direction = 1;
@@ -260,9 +261,8 @@ switch (mstatus) {
         {
             if (newpress) {
                 AtomS3.Display.drawString("Save ?", 5, 0);
-                //AtomS3.Display.drawString(String(targetRPM), 10, 30);
                 AtomS3.Display.drawString(String(direction), 10, 60);
-                AtomS3.Display.drawString(String(pwmValue), 10, 100);
+                AtomS3.Display.drawString(String(pwmValue), 10, 30);
                 newpress = false;
             }
             
@@ -285,14 +285,11 @@ switch (mstatus) {
                 AtomS3.Display.setTextColor(TFT_WHITE, TFT_BLACK); // White text on black background
                 AtomS3.Display.drawString(String(pwmValue), 10, 30);
                 AtomS3.Display.drawString(String(direction), 10, 60);
-                AtomS3.Display.drawString("Saved", 30, 100);
-                
+                AtomS3.Display.drawString("Saved", 10, 0);
 
             }
             break;    
         } // end of case 3
-
-    
 
     } // end of switch cases
 }
